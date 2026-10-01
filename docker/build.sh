@@ -2,6 +2,9 @@
 # BUILD v6（2026-10-01 第二轮隔离审查修订 S5：SKIP_NVAPI=1 才让"不带 NVIDIA 专有库也能建"真的可执行
 #   （v5 里层 2 是硬必需，NOTICE 却写着"删掉它也行"——承诺与代码不一致）；跳过时层 2 不建、
 #   $OUT 直接指向层 1 产物，层 3/4 照常，档模板须把 power.mode 改 sleep）
+# BUILD v6（2026-10-01 第二轮隔离审查修订 S5：SKIP_NVAPI=1 才让"不带 NVIDIA 专有库也能建"真的可执行
+#   （v5 里层 2 是硬必需，NOTICE 却写着"删掉它也行"——承诺与代码不一致）；跳过时层 2 不建、
+#   $OUT 直接指向层 1 产物，层 3/4 照常，档模板须把 power.mode 改 sleep）
 # BUILD v5（2026-10-01 三轮隔离审查修订 S1-S4，清单见 CHANGELOG.md）
 #   S1 BOOTSTRAP 块在基座预检之后 → 基座不在时先 exit 4，BOOTSTRAP=1 那条路永远走不到（文档却写着可用）；
 #      现在 BOOTSTRAP 判定提前，只有"非 bootstrap 且基座不在"才停；
@@ -50,17 +53,20 @@ if ! docker image inspect "$BASE_IMG" >/dev/null 2>&1; then
 fi
 echo "BASE_IMG=$BASE_IMG  CFG=$CFG"
 
+# S6：这一段是三轮幂等补丁叠加出来的（重复 elif 永不达、同一句提示打两遍、
+#     末尾还留着与 SKIP_NVAPI 矛盾的"层 2 需自行注释掉"）——重写为互斥三分支
 if [ "${SKIP_NVAPI:-0}" = "1" ]; then
   echo "!! SKIP_NVAPI=1：跳过层 2（不把 libnvidia-api.so.1 装进镜像）"
-  echo "   后果：控制台的 P-State 电源管理不可用——三套档模板 run/profiles/*.json 的 power.mode 都写死"
-  echo "         pstate，请改成 sleep（或建档后在控制台里改），否则点启动会被控制台侧的 P-State 校验拦下；"
-  echo "         推理本身与其余补丁层不受影响。$OUT 由层 1 产物打标签得来，层 3 直接建在它上面。"
+  echo "   代价：没有该库，控制台的 P-State 校验会拒起引擎。三套档模板的 power.mode 要改成 sleep："
+  echo "   sed -i 's/\"mode\": \"pstate\"/\"mode\": \"sleep\"/' \"$PKG/run/profiles\"/*.json"
+  echo "   （或建档之后在控制台里改）。推理本身与其余补丁层不受影响；"
+  echo "   层 2 跳过时 $OUT 由层 1 产物打标签得到，层 3/4 照常建在它上面。"
 elif [ ! -f "$HERE/libnvidia-api.so.1" ]; then
   echo "!! 缺 docker/libnvidia-api.so.1（层 2 与 P-State 电源管理必需）"
-  echo "   不想带这个文件也可以：SKIP_NVAPI=1 bash build.sh $CFG（降级语义见 docker/NVAPI-获取说明-v1.md）"
-  echo "   该文件随仓附在 docker/ 里：重新 clone 或按 SHA256SUMS.txt 校验后取回即可（sha256 须＝$NVAPI_SHA）"
-  echo "   拿不到仓内文件时的替代路见 docker/NVAPI-获取说明-v1.md（从同族镜像提取一条命令）"
-  echo "   降级路：档模板 power.mode 改 sleep（等价不管电源），层 2 需自行注释掉"
+  echo "   该文件随仓附在 docker/ 里：重新 clone，或按 SHA256SUMS.txt 校验后取回"
+  echo "   （sha256 须＝$NVAPI_SHA，层 2 的 Dockerfile 内有 sha256sum -c 门禁）"
+  echo "   拿不到仓内文件时的取回法见 docker/NVAPI-获取说明-v1.md（从同族镜像提取，一条命令）"
+  echo "   干脆不带它也能建：SKIP_NVAPI=1 bash build.sh $CFG（代价见上一分支的提示）"
   exit 4
 fi
 

@@ -29,6 +29,7 @@
 #   bash download-model-v3.sh --verify     只校验已下载目录（分片齐不齐＋总字节）
 # 可覆盖：REPO DEST HF_ENDPOINT HF_RUNNER_IMG PYBIN PYIN_IMG REVISION HF_VERSION
 # 退出码：0 成功 / 2 参数或路径不合法 / 3 校验没过（缺片）/ 4 站点清单取不到 / 5 清单与本地 index 不一致
+# 退出码：0 成功 / 2 参数或路径不合法 / 3 校验没过（缺片）/ 4 站点清单取不到 / 5 清单与本地 index 不一致
 # 断点续传：snapshot_download 对 local_dir 内的 incomplete 文件自动续传，重跑同命令即可。
 set -u
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,6 +40,9 @@ export HF_ENDPOINT   # V48：改成脚本级 export——三个 runner 都要它
                      # 本机实测 Git Bash 的 env 会把管道里的 stdin 吞掉（Linux 正常），少一个外部命令更稳
 HF_RUNNER_IMG="${HF_RUNNER_IMG:-}"
 PYIN_IMG="${PYIN_IMG:-python3}"
+REVISION="${REVISION:-}"        # V47：非空＝snapshot_download(revision=...) 钉到某个仓库修订
+HF_VERSION="${HF_VERSION:-}"    # V47：非空＝slim runner 里 pip 装这个版本（不凭记忆内置版本号）
+export REVISION HF_VERSION   # V49：定义处即 export（补丁叠加曾把这两行写进 --bg 前缀两遍）
 REVISION="${REVISION:-}"        # V47：非空＝snapshot_download(revision=...) 钉到某个仓库修订
 HF_VERSION="${HF_VERSION:-}"    # V47：非空＝slim runner 里 pip 装这个版本（不凭记忆内置版本号）
 if [ -z "${PYBIN:-}" ]; then
@@ -78,6 +82,8 @@ from huggingface_hub import snapshot_download
 kw = {}
 if "resume_download" in inspect.signature(snapshot_download).parameters:
     kw["resume_download"] = True
+if len(sys.argv) > 3 and sys.argv[3]:
+    kw["revision"] = sys.argv[3]      # V47
 if len(sys.argv) > 3 and sys.argv[3]:
     kw["revision"] = sys.argv[3]      # V47
 p = snapshot_download(repo_id=sys.argv[1], local_dir=sys.argv[2], **kw)
@@ -140,7 +146,7 @@ run_dl(){
   fi
   if [ -n "$IMG" ]; then
     say "runner=docker $IMG（宿主无 huggingface_hub，用包内已建镜像；容器内 $PYIN_IMG）"
-    dl_code | runner "$IMG" "$REVISION"
+    dl_code | runner "$IMG" "$REVISION" "$REVISION"
   else
     say "runner=docker python:3.11-slim 现装 huggingface_hub（需外网；要固定镜像用 HF_RUNNER_IMG 覆盖）"
     PIPARG=huggingface_hub
@@ -179,7 +185,6 @@ if [ "$MODE" = "bg" ]; then
   #        函数体经 declare -f 传给孩子（体内只引用变量名，值在孩子运行时从环境取）
   # V3 配套：孩子 cmdline 里会出现 run_dl 标记，start-here 值守据此认进程
   REPO="$REPO" DEST="$DEST" HF_ENDPOINT="$HF_ENDPOINT" HF_RUNNER_IMG="$HF_RUNNER_IMG" PYBIN="$PYBIN" PYIN_IMG="$PYIN_IMG" \
-  REVISION="$REVISION" HF_VERSION="$HF_VERSION" \
     nohup bash -c "$(declare -f say dl_code runner run_dl verify); run_dl && verify && echo DOWNLOAD_ALL_DONE || echo DOWNLOAD_FAILED" \
     < /dev/null > "$LOG" 2>&1 &
   echo $! > "$PIDF"
@@ -213,6 +218,8 @@ for sib in info.get('siblings', []):
     checked_names.append(name)
     oid = ((sib.get('lfs') or {}).get('oid') or '').split(':')[-1]
     path = os.path.join(d, name)
+    checked += 1
+    checked_names.append(name)
     if not oid:
         print('NO_OID', name); bad += 1; continue
     if not os.path.exists(path):
@@ -246,6 +253,52 @@ sys.exit(1 if bad else 0)
 PY
   rc=$?
   [ "$rc" = "0" ] && say "SHA_VERIFY_OK" || say "SHA_VERIFY_FAILED rc=$rc（缺片、换源、站点不给 oid、与本地 index 不一致都会走到这里）"
+  exit "$rc"
+fi
+
+if [ "$MODE" = "verifys" ]; then
+  # V46：站点 API 的 LFS oid 就是每片的 sha256，逐片比本地文件（回应"权重零校验"）
+  say "按 $HF_ENDPOINT 的 LFS oid 逐片校验 sha256（要读完 $DEST，120GiB 级需几十分钟）"
+  HF_ENDPOINT="$HF_ENDPOINT" $PYBIN - "$DEST" "$REPO" "$REVISION" <<'PY'
+import hashlib, json, os, sys, urllib.request
+d, repo, rev = sys.argv[1], sys.argv[2], (sys.argv[3] or '')
+api = os.environ.get('HF_ENDPOINT', 'https://hf-mirror.com').rstrip('/') + '/api/models/' + repo
+if rev:
+    api += '/revision/' + rev
+try:
+    with urllib.request.urlopen(api, timeout=60) as r:
+        info = json.load(r)
+except Exception as e:
+    print('SHA_VERIFY_API_FAIL', e); sys.exit(4)
+bad = 0
+sibs = info.get('siblings', [])
+if rev:
+    sibs = info.get('siblings', [])
+for sib in sibs:
+    name = sib.get('rfilename', '')
+    if not name.endswith('.safetensors'):
+        continue
+    lfs = sib.get('lfs') or {}
+    oid = (lfs.get('oid') or '').split(':')[-1]
+    path = os.path.join(d, name)
+    if not oid:
+        print('NO_OID', name); bad += 1; continue
+    if not os.path.exists(path):
+        print('MISSING', name); bad += 1; continue
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for blk in iter(lambda: f.read(1 << 24), b''):
+            h.update(blk)
+    got = h.hexdigest()
+    if got != oid:
+        print('SHA_MISMATCH', name, 'local=' + got, 'remote=' + oid); bad += 1
+    else:
+        print('SHA_OK', name)
+print('SHA_VERIFY_BAD=%d' % bad)
+sys.exit(1 if bad else 0)
+PY
+  rc=$?
+  [ "$rc" = "0" ] && say "SHA_VERIFY_OK" || say "SHA_VERIFY_FAILED rc=$rc（缺片/换源/站点无 oid 都会走到这里）"
   exit "$rc"
 fi
 
