@@ -1,4 +1,5 @@
 #!/bin/bash
+# 自包含部署 启动脚本 v3.4（2026-10-01 交互习惯修订 U1-U4，见 审查记录 §6.7）
 # 自包含部署 启动脚本 v3.3（2026-10-01 服务器模拟实证修订 F14-F15，清单见 内部/审查记录-自包含部署包-v1.md §v3.3）
 #   F14 v3.2 重构时丢了 MODE=p2p 的早退：P2P 跑完继续走全流程（模拟中 03:19 那轮因此误起了容器）；恢复早退；
 #   F15 本镜像代（harness 0.1.7 集成后）主服务把 /api/* 全委派给 bridge，未登录一律 401/503：
@@ -17,7 +18,7 @@
 # v1.1/v2 保留作 lineage。修订清单见 审查记录-自包含部署包-v1.md §v3。
 # MODE: env / detect / p2p / dlprobe / full（默认 full）
 set -u
-SH_VER="v3.3"
+SH_VER="v3.4"
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
 MODE="${MODE:-full}"
 TORCH_IMG="${TORCH_IMG:-pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime}"
@@ -45,13 +46,18 @@ die(){ say "!! $*"; exit 2; }
 ask(){ # ask 变量名 "提示" 默认值   —— 回车采用默认（F10：不用 eval，默认值/输入含空格或 $ 也安全）
   local __n=$1 __p=$2 __d=$3 __v
   printf '%s【%s】: ' "$__p" "$__d"; read -r __v
-  printf -v "$__n" '%s' "${__v:-$__d}"
+  __v="${__v:-$__d}"
+  __v="${__v%$'　'}"   # U2：去掉全角空格/尾斜杠（输入法习惯），不给 docker 挂载留坑
+  __v="${__v%% }"; while [ -n "$__v" ] && [ "${__v%/}" != "$__v" ] && [ "$__v" != "/" ]; do __v="${__v%/}"; done
+  printf -v "$__n" '%s' "$__v"
 }
 yn(){ # yn "提示" 默认Y/N；返回0=是
   local __p=$1 __d=$2 __v
   printf '%s【%s】: ' "$__p" "$__d"; read -r __v
   __v=${__v:-$__d}
-  case "$__v" in y|Y|yes) return 0 ;; *) return 1 ;; esac
+  # U1：中文习惯——"是/好/y/s"都算 yes，"否/n"算 no，其余按默认值方向
+  case "$__v" in y|Y|yes|YES|是|好|确认|s|S) return 0 ;; n|N|no|NO|否|不|2) return 1 ;; esac
+  [ "$__d" = "Y" ] && return 0 || return 1
 }
 command -v docker >/dev/null || die "缺 docker"
 command -v curl >/dev/null || die "缺 curl"
@@ -364,9 +370,11 @@ done
 
 # ---------- 7) 等引擎健康 ----------
 OK=0
+say "等引擎健康（169G 级权重约需 5-10 分钟，每 30 秒报一次进度，不是卡死）…"
 for i in $(seq 1 90); do
   sleep 10
   [ "$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://$PROBE_HOST:$ENGINE_PORT/health" 2>/dev/null)" = "200" ] && { OK=1; break; }
+  [ $((i % 3)) = 0 ] && say "  …已等 $((i*10))s（引擎日志：docker logs --tail 20 $NAME）"
 done
 [ "$OK" = "1" ] || { say "!! 引擎 15 分钟没健康；最后 30 行日志："; docker logs --tail 30 "$NAME" 2>&1 | tail -30; exit 3; }
 
@@ -384,5 +392,8 @@ say "  引擎:     http://$IP:$ENGINE_PORT/v1   （OpenAI 兼容）"
 say "  引擎APIkey: $APIKEY   （容器内 $CROOT/engine-key.current）"
 say "  备份建议: 把这两个文件 cp 到包外安全位置并 chmod 600；本屏幕输出请自行留存或清屏"
 say "  模型测试: speedtest 与 sql 两个功能已请求默认开启（控制台里可见）"
+say "  常用命令:  停引擎  curl -b <cookie> -X POST http://$PROBE_HOST:$CONSOLE_PORT/console-api/profiles/$PID/stop"
+say "             起引擎  同上把 stop 换成 start；或直接进控制台网页操作"
+say "             看日志  docker logs --tail 50 $NAME   或容器内 $CROOT/$PID.log（取最后一段）"
 say "=============================================================="
 say "START_HERE_DONE"

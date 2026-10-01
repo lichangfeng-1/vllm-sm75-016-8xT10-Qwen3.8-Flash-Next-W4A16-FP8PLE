@@ -337,7 +337,7 @@ f98404c5c699fba651d30f994dcda5cbe863716aa2d650bd3070cd2b9799c6ed *./run/env-chec
 80958f81571d2841914db8e308ea266d9f51a938eb7d5c680c11f7d69ac2d234 *./run/profiles/profile-autoround-incple.json
 20372c82b8fba0c441dd6b5a7072b88e790a306be0a7098dbe44c90498a3b132 *./run/profiles/profile-awq-int4.json
 f8ee63c87f889a738b646ac396b23def2d05e2031d5714fc65096e724ba77938 *./run/profiles/profile-fp8-base.json
-09abd791688bb4f8bafd85a87bb345e533249507980e2af1c431e59c8f8a073c *./run/start-here.sh
+6169c5d4ff1419314907741950199f356895dd92f668a31d44e5a56947b766ae *./run/start-here.sh
 38677f5de2c55e14decdf250d36dce8db0a02729f3fb2114e4ede7e410dc82a1 *./tools/download-model-v1.sh
 b026fb17b5989c7c8807edfe7302dd3adb342b0ee1957947a9291827bced41dc *./tools/download-model-v2.sh
 e2f55b31b2d46b2d2dabec8320bb89491b903b893a0ffd02c27b3ce519853167 *./tools/g292z20-nccl-tests/diag_p2p.py
