@@ -433,6 +433,8 @@ fi
 mkdir -p "$DATA" || die "建不了数据目录 $DATA"
 # 这个目录里落 key/token/引擎日志：显式 0700（旧版建目录时 umask 还是 022，凭据目录以 0755 出生）
 chmod 700 "$DATA" 2>/dev/null || say "!! chmod 700 $DATA 未成功（目录属主不是你？），凭据文件权限会偏松"
+# 这个目录里落 key/token/引擎日志：显式 0700（旧版建目录时 umask 还是 022，凭据目录以 0755 出生）
+chmod 700 "$DATA" 2>/dev/null || say "!! chmod 700 $DATA 未成功（目录属主不是你？），凭据文件权限会偏松"
 [ -z "$CACHE_SRC" ] || { mkdir -p "$CACHE_SRC" || die "建不了缓存目录 $CACHE_SRC"; }
 # F3/F11：容器内根与编译缓存目标都跟 CROOT 走（旧版写死 /console-data，SM75_CONSOLE_ROOT 一改就读不到 token）；
 #        CACHE_SRC 挂到真实 cacheRoot（$CROOT/cache，见 console store.mjs 默认值），旧版挂 /cache/fp8 在单容器形态下不生效

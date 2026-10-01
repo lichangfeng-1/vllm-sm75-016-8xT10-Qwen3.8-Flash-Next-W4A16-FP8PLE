@@ -16,6 +16,26 @@ sha256sum libnvidia-api.so.1
 - 随附副本与驱动 **580.173.02** 配套实测（sha 即门禁值）。**换驱动版本**时该库可能不同：
   优先用本仓副本试；P-State 异常再按下面"重新获取"或走降级路。
 
+## 干脆不带这个文件（`SKIP_NVAPI=1`）
+不想在本地保留这个 NVIDIA 专有二进制时，整层跳过即可（`docker/build.sh` v6 起是真开关，不需要手工注释 Dockerfile）：
+
+```bash
+SKIP_NVAPI=1 bash docker/build.sh incple
+```
+
+- 行为：层 2 不构建，层 1 产物直接打标签给 `…:patched-nvapi`，层 3/4 照常建在它上面；
+- 代价：**没有该库，控制台的 P-State 电源管理校验会拒起引擎**。三套档模板里的
+  `power.mode` 都写死 `pstate`，要改成 `sleep`（等价"不管电源"）：
+
+```bash
+sed -i 's/"mode": "pstate"/"mode": "sleep"/' run/profiles/*.json
+```
+
+  或者建档之后在控制台网页里改。**只改模板不够**——已经建好的档要重新 POST 或在控制台里改一次。
+- 推理本身、其余补丁层、模型加载与生成都与这个库无关。
+- 之后想补回来：按下面方法 A 自己取件，放进 `docker/`，正常 `bash build.sh` 即可（sha 门禁会验）。
+
+
 ## 文件缺失或换驱动时的重新获取
 - **方法 A（已实证）**：从任何已含该库的同族镜像提取：
   ```bash
