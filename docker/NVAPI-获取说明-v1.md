@@ -2,8 +2,9 @@
 
 ## 获取：直接从本 GitHub 仓库下载
 本仓**随附**该库副本：`docker/libnvidia-api.so.1`（720,104 字节）。
-clone 或单独下载均可（raw 路径示例）：
-`https://github.com/<owner>/<repo>/raw/main/docker/libnvidia-api.so.1`
+clone 整仓或网页下载单文件均可：
+- `git clone https://github.com/lichangfeng-1/vllm-sm75-016-8xT10-Qwen3.8-Flash-Next-W4A16-FP8PLE.git` 后取 `docker/libnvidia-api.so.1`；
+- 或网页进入 `docker/` 目录点该文件下载（注意：raw.githubusercontent.com 在部分网络不可达，优先前两种）。
 下载后必过 sha 门禁：
 ```bash
 sha256sum libnvidia-api.so.1
