@@ -1,1 +1,24 @@
+# 跑过本包之后目录下会出现这些东西——都是本机凭据与运行痕迹，绝不进版本库
 *.zip
+
+# 控制台数据（登录 token、引擎 API key、档与日志都在这里）
+console-data/
+/console-data/
+models/
+
+# 运行产物
+run/*.log
+tools/*.log
+tools/g292z20-nccl-tests/*.log
+p2p-suite-*.log
+env-*.log
+build-*.log
+.download.log
+.download.pid
+
+# 本机过程件
+内部/
+lineage/
+__pycache__/
+*.pyc
+.DS_Store

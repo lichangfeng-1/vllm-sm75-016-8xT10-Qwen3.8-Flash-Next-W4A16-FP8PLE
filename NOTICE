@@ -1,0 +1,32 @@
+Copyright 2026 SM75 v0.1.6 自包含部署包 contributors
+
+This product bundles and extends the following third-party / upstream work:
+
+1. vLLM-SM75 v0.1.6  (source tree shipped at code/VLLM-SM75-main0.16/)
+   Copyright of the vLLM-SM75 authors; licensed under the Apache License, Version 2.0.
+   That tree itself is an adaptation of vLLM 0.30.0 (Apache License, Version 2.0)
+   for NVIDIA Turing / SM75 devices.  See code/VLLM-SM75-main0.16/LICENSE and
+   code/VLLM-SM75-main0.16/README.md for the upstream notice and release notes.
+
+2. Deployment scripts, patches and P2P/NCCL test suite in docker/, run/ and tools/
+   are original to this package and are distributed under the same Apache License,
+   Version 2.0 as the bundled source tree (see LICENSE at the repository root).
+
+3. docker/libnvidia-api.so.1 is NOT original work.  It is a component that ships with
+   the NVIDIA display driver (tested with driver 580.173.02).  It is included in this
+   repository purely so the P-State power-management layer can be built offline; that
+   is a practical choice by this repository's publisher, not a licence grant.  It remains governed by the NVIDIA driver license, not by the Apache
+   License above, and this project makes no claim that the NVIDIA license permits
+   redistribution by third parties.  If you would rather not carry the binary: delete
+   the file and build with SKIP_NVAPI=1 (docker/build.sh) - inference still works,
+   only P-State power management is unavailable.  Its integrity is pinned by sha256
+   4a199f9b259a1098ab9c01d31c67f882a2531a0fbb9c3595ad3d016c7d131d8c
+   (enforced by docker/Dockerfile.nvapi).  If you would rather not take this copy,
+   delete the file and follow docker/NVAPI-获取说明-v1.md to obtain it from your own
+   driver or an image you already have, or set power.mode = sleep in the profile.
+
+4. Model weights are NOT part of this package.  Recommended public checkpoints are
+   third-party quantized releases on Hugging Face; they carry their own licenses and
+   base-model terms, which you must review before use.
+
+No warranty is provided; see LICENSE Sections 11 and 13.

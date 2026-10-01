@@ -1,5 +1,9 @@
 #!/bin/bash
-# 环境检测 v3（2026-10-01 二轮 review 修订 E1-E3，清单见 内部/审查记录-自包含部署包-v1.md §v3.2）
+# 环境检测 v4（2026-10-01 三轮隔离审查 N1-N3 ＋第二轮 N4，清单见 CHANGELOG.md）
+#   N1 `. /etc/os-release` 失败时只兜住 PRETTY_NAME 这一个赋值，文件里没这个变量时 say "os=$PRETTY_NAME" 在 set -u 下崩；
+#   N2 PYBIN 探不到时 registry_mirrors 的 python 解析被 2>/dev/null 吞掉，静默报 none（把"没 python"说成"没配 mirror"）；
+#   N3 报告里补一句本机 python 形态，避免使用者把"缺 python"当成包的问题。
+# v3（2026-10-01 二轮 review 修订 E1-E3，清单见 CHANGELOG.md）
 #   E1 daemon.json 解析写死 python3（坏别名/仅 python 的机器会静默报 none）→ 与 start-here 同款"真能跑才认"探测；
 #   E2 可达性循环 `curl ... || echo 000` 在 curl 失败时会双行输出（-w 已先打印 000）→ 去掉兜底 echo；
 #   E3 缺 nvidia-container-toolkit 时 --gpus all 必失败但旧版不查 → 新增 INCOMPAT 项（docker runtimes/ nvidia-ctk 两路探测）。
@@ -12,11 +16,23 @@ set -u
 say(){ printf '%s\n' "$*"; }
 WARN=0; INCOMPAT=""
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYBIN=""
-for C in python3 python; do
-  command -v "$C" >/dev/null 2>&1 && "$C" -c 'import sys, json' >/dev/null 2>&1 && { PYBIN=$C; break; }
-done
+# N4（第二轮）：尊重使用者显式给的 PYBIN——start-here 与下载器都尊重，旧版在这里无条件清空，
+#     于是"PYBIN=/opt/mamba/bin/python ./start-here.sh"会在这里被丢掉，mirror 探测走了另一个解释器
+if [ -n "${PYBIN:-}" ] && ! "$PYBIN" -c 'import sys, json' >/dev/null 2>&1; then
+  say "PYBIN=${PYBIN} 指定值跑不动（导入 sys,json 失败），改自动探测"
+  PYBIN=""
+fi
+if [ -z "${PYBIN:-}" ]; then
+  for C in python3 python; do
+    command -v "$C" >/dev/null 2>&1 && "$C" -c 'import sys, json' >/dev/null 2>&1 && { PYBIN=$C; break; }
+  done
+fi
 command -v curl >/dev/null 2>&1 || { say "CHK curl = HARD_FAIL（未安装，可达性与下载都靠它）"; exit 4; }
+if [ -n "$PYBIN" ]; then
+  say "python=可用（$PYBIN）"
+else
+  say "python=没有能真跑起来的（Windows 商店别名那种『存在但 rc=49』也算没有）；daemon.json 解析与分片校验改用 grep 兜底"
+fi
 
 say "=== 参考环境（优先推荐同款；实测 2026-10-01 @ G292-Z20） ==="
 say "ref_os=Ubuntu 24.04.x LTS | ref_kernel=6.8.x | ref_docker=29.8.0 | ref_driver=580.173.02"
@@ -25,7 +41,10 @@ say "（差异过大不强行执行：INCOMPAT 项会停下问你是否 FORCE；
 say ""
 
 say "=== 系统与内核 ==="
-. /etc/os-release 2>/dev/null || PRETTY_NAME="unknown"
+# N1：os-release 缺失或没有 PRETTY_NAME 时，$PRETTY_NAME 在 set -u 下会直接崩（旧版只兜住了 source 失败）
+PRETTY_NAME=""
+. /etc/os-release 2>/dev/null
+[ -n "${PRETTY_NAME:-}" ] || PRETTY_NAME="${NAME:-unknown}"
 say "os=$PRETTY_NAME"
 case "$PRETTY_NAME" in
   *Ubuntu\ 24.04*|*Ubuntu\ 22.04*) say "CHK os = OK（与参考同族）" ;;
@@ -50,8 +69,16 @@ if command -v docker >/dev/null 2>&1; then
     INCOMPAT="$INCOMPAT nvidia-container-toolkit 缺失(--gpus all 会失败) "
     say "CHK gpu_runtime = INCOMPAT（docker runtimes 无 nvidia 且无 nvidia-ctk；装 nvidia-container-toolkit 后再跑）"
   fi
-  MIR=$($PYBIN -c "import json;print(','.join(json.load(open('/etc/docker/daemon.json')).get('registry-mirrors',[])))" 2>/dev/null)
-  say "registry_mirrors=${MIR:-none}（none 时国内拉 docker.io 慢；本包不代改系统配置，可自行加 mirror）"
+  # N2：没有可用 python 时直说"解析不了"，不再把"没 python"误报成"没配 mirror"
+  #     （grep 兜底会把 insecure-registries 之类的 URL 也算成 mirror，宁缺勿错）
+  if [ -n "$PYBIN" ]; then
+    MIR=$($PYBIN -c "import json;print(','.join(json.load(open('/etc/docker/daemon.json')).get('registry-mirrors',[])))" 2>/dev/null)
+    say "registry_mirrors=${MIR:-none}（none 时国内拉 docker.io 慢；本包不代改系统配置，可自行加 mirror）"
+  elif [ -f /etc/docker/daemon.json ]; then
+    say "registry_mirrors=?（本机没有能真跑的 python 解析 daemon.json，请自查 /etc/docker/daemon.json 的 registry-mirrors）"
+  else
+    say "registry_mirrors=none（无 /etc/docker/daemon.json；国内拉 docker.io 慢，可自行加 mirror，本包不代改系统配置）"
+  fi
 else
   say "CHK docker = HARD_FAIL（未安装）"; exit 4
 fi

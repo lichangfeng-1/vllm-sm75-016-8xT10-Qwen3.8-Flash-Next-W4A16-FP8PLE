@@ -1,0 +1,19 @@
+# 行尾与二进制判定——SHA256SUMS.txt 是按字节算的，Windows 上 clone 若被转成 CRLF，
+# 校验会全红、.sh 也可能被 bash 嫌 ^M；这里强制 LF，二进制明确不转换。
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.mjs text eol=lf
+Dockerfile* text eol=lf
+*.patch text eol=lf
+*.so binary
+*.so.1 binary
+*.tar binary
+*.tar.gz binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.pt binary
+*.safetensors binary
