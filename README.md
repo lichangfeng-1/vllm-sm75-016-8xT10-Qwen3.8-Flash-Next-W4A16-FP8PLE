@@ -72,8 +72,8 @@ cd <包> && sha256sum -c SHA256SUMS.txt     # 应全 OK、rc=0
 - 吞吐数字带工况：功耗窗与 persistence 状态每次开测前先查 `nvidia-smi -q -d POWER`。
 - LiveCodeBench 在"思考常开×固定小 max_tokens"端点**不可比**；公开卡片分数只作外部参考值。
 - incple 档模板 `--max-num-batched-tokens=2048` 已在 AutoRound 权重上验证可用（2026-10-01 全流程跑通）；
-  实测口径（用户 2026-10-01）：2048 时预填充峰值吞吐约 3000 t/s，改 4096 升到 3200+ t/s，
-  但更大的预填充批次有出问题的风险——默认保持 2048 安全基线，追求 prefill 速度可 MMBT=4096。
+  实测口径（用户 2026-10-01）：2048 预填充峰值吞吐约 3000 t/s；**4096 也已验证**（前一晚数小时长程任务稳定，峰值 3200+ t/s）；
+  再大（如 8192）有 OOM 风险。默认保持 2048 止血基线，追求 prefill 速度可放心用 4096。
 - 从控制台镜像派生的新镜像**继承 node entrypoint**：要直接 `docker run <镜像> vllm serve …` 必须加
   `--entrypoint /usr/local/bin/vllm`，否则起的是第二个控制台。
 - 本脚本**不删除任何容器**：同名在跑或同名已停都会停下让你自行 stop/rename。
