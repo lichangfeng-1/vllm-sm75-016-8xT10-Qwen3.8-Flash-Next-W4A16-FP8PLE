@@ -3,6 +3,31 @@
 本包＝SM75 v0.1.6 代码线的自包含部署包。下列条目是每一轮 review／实机模拟发现问题后的修订，
 标号（F/G/U/V/W/H/N/S/B/E/D）只是内部审计用编号，不影响使用。
 
+## v3.6（2026-10-02）— 群友实机反馈：层 3/4 的目标路径写死
+
+反馈形状：层 1、层 2 正常，层 3 `docker build` 挂在
+`FileNotFoundError: /usr/local/lib/python3.12/dist-packages/vllm/models/qwen4_exp/nvidia/ngram_embedding.py`。
+同一台机器的 P2P/NCCL 套件是先跑过的（56/56 链路全连通、单向下限 13.16 GB/s、双向 13.15、NCCL busbw 11.53），
+所以问题不在 GPU 侧，在补丁层对环境的隐含假设。
+
+- `docker/patch_ple_awq.py`：目标文件不再写死。新增 `docker/resolve_vllm_paths.py`，在镜像内问解释器要
+  `vllm.__file__` 并拼出真实路径；解析失败时打印 python 版本／`sys.prefix`／`purelib`／`vllm.__file__`
+  并以退出码 3 停——一次分辨"布局不同"与"基座不含 qwen4_exp"两种根因。旧报错只给一句写死路径的
+  FileNotFound，使用者只能猜。读写一律显式 `encoding="utf-8"`。
+- `docker/Dockerfile.incple`：顺带修掉一个**假通过**。旧写法 `COPY` 直接落到写死路径，目录不存在时
+  Docker 会连目录一起造，于是基座不含 `qwen4_exp` 也能"构建成功"、产出一个没人 import 的孤儿文件
+  （`py_compile` 不 import，`grep INCConfig` 查的是刚拷进去的载荷，两道断言都拦不住）。现在先解析、
+  要求目标已存在（层 3 的产物必然在），再覆盖、再断言。
+- `docker/build.sh` v7：层 4 复算用的 `NGRAM` 改为在镜像内解析（`resolve_ngram`），解析不到时打解释器
+  实况并退出码 6；路径与基线不同时打 `NGRAM_PATH_DRIFT`（不影响校验，只是环境标注）。
+- 文档：README「基座前提」补层 3/4 的额外前提，并明确包内 `code/` 是 321 文件的 overlay 树、不含
+  `qwen4_exp`，故 `BOOTSTRAP=1` 那条路能否产出该目录**未验证**，确定能跑到层 3 的只有"本机已有基座"
+  与"docker load 基座 tar"两条；部署文档的自验段、退出码表、故障表同步。
+- 立场说明：路径解析是"让报错指向根因"，不是"适配任意环境"。参考环境仍是
+  Ubuntu 24.04 + python 3.12 + dist-packages，非参考布局会打 DRIFT 行；结果可比性靠对齐，不靠兜底。
+- 验证状态：`bash -n`／`py_compile` 过；解析器四条分支（目标在／目标不在／vllm 不可导入／`--allow-missing`）
+  用假 vllm 包实测过。**未验**：真实基座镜像上的层 3/4 构建（需服务器开机或群友复跑）。
+
 ## v3.5（2026-10-01）— 三轮独立 review ＋ 安全审查后的修订
 
 启动脚本 `run/start-here.sh`
