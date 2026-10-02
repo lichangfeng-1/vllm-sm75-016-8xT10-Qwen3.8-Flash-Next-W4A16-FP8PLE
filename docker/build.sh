@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# BUILD v7（2026-10-02 群友实机反馈）：层 3/层 4 的目标文件路径不再写死
+#   /usr/local/lib/python3.12/dist-packages/…，改为在镜像内问解释器要路径（docker/resolve_vllm_paths.py）。
+#   写死等于把"参考环境＝Ubuntu 24.04 + 系统 pip"这一种布局当成唯一真相，venv/conda/非 3.12 的机器
+#   只会看到一句 FileNotFoundError 而猜不到根因。顺带修掉层 4 的假通过：旧 Dockerfile.incple 用
+#   COPY 直接落到写死路径，目录不存在时 Docker 连目录一起造，于是基座不含 qwen4_exp 也能"构建成功"，
+#   产出一个没人 import 的孤儿文件。现在要求目标已存在（层 3 产物必然在）再覆盖。
 # BUILD v6（2026-10-01 第二轮隔离审查修订 S5：SKIP_NVAPI=1 才让"不带 NVIDIA 专有库也能建"真的可执行
 #   （v5 里层 2 是硬必需，NOTICE 却写着"删掉它也行"——承诺与代码不一致）；跳过时层 2 不建、
 #   $OUT 直接指向层 1 产物，层 3/4 照常，档模板须把 power.mode 改 sleep）
@@ -30,7 +36,11 @@ OUT="${OUT_TAG:-vllm-sm75-next-ultra-0924:patched-nvapi}"
 OUT2="${OUT2_TAG:-vllm-sm75-next-ultra-0924:patched-nvapi-awqple}"
 OUT3="${OUT3_TAG:-vllm-sm75-next-ultra-0924:patched-nvapi-awqple-incple}"
 CFG="${1:-all}"
-NGRAM=/usr/local/lib/python3.12/dist-packages/vllm/models/qwen4_exp/nvidia/ngram_embedding.py
+NGRAM_BASE=/usr/local/lib/python3.12/dist-packages/vllm/models/qwen4_exp/nvidia/ngram_embedding.py
+# v7（2026-10-02）：目标路径不再写死 python3.12/dist-packages——那是参考环境（Ubuntu 24.04 + 系统 pip）
+#   那一种布局。改为在镜像内问解释器要路径，解析不出来时打诊断，别让人对着 FileNotFoundError 猜根因。
+resolve_ngram(){ docker run --rm --entrypoint python3 "$1" -c \
+  'import vllm,os;print(os.path.join(os.path.dirname(vllm.__file__),"models","qwen4_exp","nvidia","ngram_embedding.py"))' 2>/dev/null; }
 NVAPI_SHA=4a199f9b259a1098ab9c01d31c67f882a2531a0fbb9c3595ad3d016c7d131d8c
 
 # S1：先决定基座从哪来，再预检
@@ -87,6 +97,15 @@ if [ "$CFG" = "all" ] || [ "$CFG" = "incple" ]; then
   echo "=== 层 4：PLE 的 auto-round/INC 分支 —— Intel AutoRound W4A16 权重必需 ==="
   docker build --build-arg BASE="$OUT2" -f "$HERE/Dockerfile.incple" -t "$OUT3" "$HERE"
   # S2：显式断言补丁真的进了镜像（计数>=1），不再让一条没人看结果的 grep 充当校验
+  NGRAM="$(resolve_ngram "$OUT3" || true)"
+  if [ -z "$NGRAM" ]; then
+    echo "!! 层 4 校验失败：镜像 $OUT3 内解析不到 vllm 的 ngram_embedding.py（下面打的是解释器实况）"
+    docker run --rm --entrypoint python3 "$OUT3" -c 'import sys,sysconfig;print("python",sys.version.split()[0]);print("prefix",sys.prefix);print("purelib",sysconfig.get_paths()["purelib"]);import vllm;print("vllm",vllm.__file__)' 2>&1 | sed 's/^/   /' || true
+    echo "   vllm 那行若报错＝基座不是 SM75 v0.1.6 ultra 派生镜像（层 3 会在同一处停并打 RESOLVE_FAIL）"
+    exit 6
+  fi
+  echo "NGRAM_PATH=$NGRAM"
+  [ "$NGRAM" = "$NGRAM_BASE" ] || echo "NGRAM_PATH_DRIFT=$NGRAM（基线 $NGRAM_BASE；布局不同不影响校验，只说明这台机不是参考环境）"
   CNT="$(docker run --rm --entrypoint grep "$OUT3" -c INCConfig "$NGRAM" || true)"
   case "${CNT:-0}" in
     ''|0) echo "!! 层 4 校验失败：$NGRAM 里没有 INCConfig（cnt='${CNT:-0}'）——补丁没进镜像，别当构建成功"

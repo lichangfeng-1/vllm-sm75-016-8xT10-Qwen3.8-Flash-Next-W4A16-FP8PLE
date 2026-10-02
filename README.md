@@ -1,4 +1,4 @@
-# SM75 v0.1.6 自包含部署包（README · 2026-10-01 · 入口脚本 v3.5）
+# SM75 v0.1.6 自包含部署包（README · 2026-10-02 · 入口脚本 v3.5 ＋ 补丁构建 v7，包 v3.6）
 
 **一句话**：把本文件夹拷到一台 8×T10（SM75）服务器的任意目录，跑一条命令，得到一个带 Web 控制台、
 能自动识别模型量化类型、并默认开好"模型测试"两个功能的 vLLM 推理服务。
@@ -16,6 +16,10 @@
    ③ 用包内 `code/VLLM-SM75-main0.16/` 现建 → `BOOTSTRAP=1 bash docker/build.sh <cfg>`
       （走上游官方链 standard→ultra，需外网、小时级；**本包未实机验证过这条路**）。
    上游版本与构建说明见 `code/VLLM-SM75-main0.16/README.md` 与 `code/VLLM-SM75-main0.16/docs/releases/v0.1.6.md`。
+   **层 3/层 4 的额外前提**：这两层动的是基座内的 `vllm/models/qwen4_exp/nvidia/ngram_embedding.py`。
+   基座里没有该文件时，层 3 会以 `PLE_AWQ_RESOLVE_FAIL` 停下并打印解释器诊断（v3.6 起，退出码 3）——
+   那是基座不对，不是补丁坏了。包内 `code/` 是 321 个文件的 overlay 树、**不含** `qwen4_exp`，
+   所以路③能否产出该目录本包未验证；**确定能跑到层 3 的只有路① 和路②**。
 2. **硬件验证配置**：总显存 ≥128G 且宿主内存 ≥128G（硬门槛 `REQ_VRAM_G`/`REQ_RAM_G`；
    `env-check.sh` 另有内存 <180G 的 WARN 档——engram cpu_offload 实测占约 96G，128G 能跑但没余量）（G292-Z20 8×T10 16G＋252G 实测跑通；
    engram n-gram 表单独占约 95-96G 宿主内存）。低于会问你是否强制继续。
